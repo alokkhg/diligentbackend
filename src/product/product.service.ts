@@ -1,10 +1,11 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MoreThan, Repository } from 'typeorm';
 import { CreateProductDto } from './dto/create-product.dto';
 import { Product } from './entities/product.entity';
 import { AxiosRequestConfig } from 'axios';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class ProductService {
@@ -26,40 +27,72 @@ export class ProductService {
       createProduct.description = createProductDto.description;
     }
 
-    return await this.productRepo.insert(createProductDto);
+    try {
+      return await this.productRepo.insert(createProduct);
+    } catch (err) {
+      console.log(`Error while creating new user is ${err}`);
+      throw new HttpException(`${err}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   async findAll() {
-    return await this.productRepo.find();
+    try {
+      return await this.productRepo.find({
+        select: {
+          name: true,
+          price: true,
+          description: true,
+        },
+      });
+    } catch (err: any) {
+      throw new HttpException(`{err}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   async findOneByName(pName: string, currency?: string) {
-    const lCurrency = typeof currency !== undefined ? currency : 'USD';
+    const lCurrency = typeof currency === 'undefined' ? 'USD' : currency;
     const retProd = await this.productRepo.findOne({
+      select: {
+        name: true,
+        price: true,
+        description: true,
+      },
       where: {
         name: pName,
         active: true,
       },
     });
 
-    const requestConfig: AxiosRequestConfig = {
-      headers: {
-        Authorization: 'apikey 880IX9uh6RPMqCVKDJO6SFucwISJz3iB',
-      },
-      params: {
-        from: 'USD',
-        to: lCurrency,
-        amount: retProd.price,
-      },
-    };
+    if (retProd == null) {
+      throw new HttpException(
+        `Product with name ${pName} not found!!!`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
 
-    const price = await this.httpService.get(
-      'https://api.apilayer.com/currency_data/convert',
-      requestConfig,
-    );
+    if (lCurrency !== 'USD') {
+      const requestConfig: AxiosRequestConfig = {
+        headers: {
+          apikey: '880IX9uh6RPMqCVKDJO6SFucwISJz3iB',
+        },
+        params: {
+          from: 'USD',
+          to: lCurrency,
+          amount: retProd.price,
+        },
+      };
 
-    // lets print the price first
-    console.log(price);
+      const price = await firstValueFrom(
+        this.httpService.get(
+          'https://api.apilayer.com/currency_data/convert',
+          requestConfig,
+        ),
+      );
+
+      // lets print the price first
+      retProd.price = price.data['result'];
+    }
+    this.increaseViewCount(pName);
     return retProd;
   }
 
@@ -69,6 +102,11 @@ export class ProductService {
       resCount = count;
     }
     return await this.productRepo.find({
+      select: {
+        name: true,
+        price: true,
+        description: true,
+      },
       where: {
         view_count: MoreThan(0),
         active: true,

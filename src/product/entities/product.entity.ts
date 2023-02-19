@@ -1,3 +1,4 @@
+import { Exclude } from '@nestjs/class-transformer';
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity()
@@ -5,10 +6,10 @@ export class Product {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ length: 200 })
+  @Column({ length: 200, unique: true })
   name: string;
 
-  @Column('text')
+  @Column('text', { nullable: true })
   description: string;
 
   @Column({ type: 'integer' })
@@ -18,5 +19,6 @@ export class Product {
   view_count: number;
 
   @Column('boolean')
+  @Exclude({ toPlainOnly: true })
   active: boolean;
 }
